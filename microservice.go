@@ -19,11 +19,12 @@ type Passenger struct {
 	LastName  string `json:"LastName"`
 	PhoneNo   int    `json:"PhoneNo"`
 	Email     string `json:"Email"`
+	Password  string `json:"Password"`
 }
 
 func main() {
 	router := mux.NewRouter()
-	router.HandleFunc("/api/v1/passenger/{username}", findPassenger).Methods("GET", "POST", "PATCH")
+	router.HandleFunc("/api/v1/passenger/{username}", findPassenger).Methods("GET", "POST", "PUT")
 	router.HandleFunc("/api/v1/passenger", allPassenger) //display all passengers
 
 	fmt.Println("Listening at port 5000")
@@ -33,11 +34,7 @@ func main() {
 func findPassenger(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
-	if val, ok := isPassengerExist(params["username"]); ok {
-		if r.Method == "GET" { //retrieve record of 1 passenger
-			json.NewEncoder(w).Encode(val)
-		}
-	} else if r.Method == "POST" { //create new passenger account
+	if r.Method == "POST" { //create new passenger account
 		if body, err := ioutil.ReadAll(r.Body); err == nil {
 			var data Passenger
 			fmt.Println(string(body))
@@ -46,11 +43,33 @@ func findPassenger(w http.ResponseWriter, r *http.Request) {
 					fmt.Println(data)
 					insertPassenger(params["username"], data)
 					w.WriteHeader(http.StatusAccepted)
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprintf(w, "Username already exist")
 				}
 			} else {
 				fmt.Println(err)
 			}
 		}
+	} else if r.Method == "PUT" { //update passenger information
+		if body, err := ioutil.ReadAll(r.Body); err == nil {
+			var data Passenger
+			fmt.Println(string(body))
+			if err := json.Unmarshal(body, &data); err == nil {
+				if _, ok := isPassengerExist(params["username"]); ok {
+					fmt.Println(data)
+					updatePassenger(params["username"], data)
+					w.WriteHeader(http.StatusAccepted)
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprintf(w, "Username does not exist")
+				}
+			} else {
+				fmt.Println(err)
+			}
+		}
+	} else if val, ok := isPassengerExist(params["username"]); ok {
+		json.NewEncoder(w).Encode(val) //retrieve record of 1 passenger
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, "Invalid Username")
@@ -81,14 +100,27 @@ func allPassenger(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func insertPassenger(username string, passenger Passenger) {
+func insertPassenger(username string, passenger Passenger) { //add new passenger record into database
 	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
 	if err != nil {
 		panic(err.Error())
 	}
 	defer db.Close()
 
-	_, err = db.Exec("INSERT INTO passenger VALUES (?, ?, ?, ?, ?)", passenger.Username, passenger.FirstName, passenger.LastName, passenger.PhoneNo, passenger.Email)
+	_, err = db.Exec("INSERT INTO passenger VALUES (?, ?, ?, ?, ?, ?)", passenger.Username, passenger.FirstName, passenger.LastName, passenger.PhoneNo, passenger.Email, passenger.Password)
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+func updatePassenger(username string, passenger Passenger) { //update an existing passenger record into database
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	_, err = db.Exec("UPDATE passenger SET FirstName = ?, LastName = ?, PhoneNo = ?, Email = ?, Password = ? WHERE Username = ?", passenger.FirstName, passenger.LastName, passenger.PhoneNo, passenger.Email, passenger.Password, passenger.Username)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -111,7 +143,7 @@ func getPassenger() (map[string]Passenger, bool) {
 	for results.Next() {
 		var p Passenger
 		var username string
-		err = results.Scan(&p.Username, &p.FirstName, &p.LastName, &p.PhoneNo, &p.Email)
+		err = results.Scan(&username, &p.FirstName, &p.LastName, &p.PhoneNo, &p.Email, &p.Password)
 		if err != nil {
 			panic(err.Error())
 		}
@@ -129,7 +161,7 @@ func isPassengerExist(username string) (Passenger, bool) {
 
 	var p Passenger
 	result := db.QueryRow("SELECT * from Passenger WHERE Username=?", username)
-	err = result.Scan(&p.Username, &p.FirstName, &p.LastName, &p.PhoneNo, &p.Email)
+	err = result.Scan(&p.Username, &p.FirstName, &p.LastName, &p.PhoneNo, &p.Email, &p.Password)
 	if err == sql.ErrNoRows {
 		return p, false
 	}
