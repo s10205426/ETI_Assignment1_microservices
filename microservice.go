@@ -22,10 +22,23 @@ type Passenger struct {
 	Password  string `json:"Password"`
 }
 
+type Driver struct {
+	Username  string `json:"Username"`
+	FirstName string `json:"FirstName"`
+	LastName  string `json:"LastName"`
+	PhoneNo   int    `json:"PhoneNo"`
+	Email     string `json:"Email"`
+	Password  string `json:"Password"`
+	IDNo      string `json:"IDNo"`
+	LicenseNo string `json:"LicenseNo"`
+}
+
 func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/v1/passenger/{username}", findPassenger).Methods("GET", "POST", "PUT")
 	router.HandleFunc("/api/v1/passenger", allPassenger) //display all passengers
+	router.HandleFunc("/api/v1/driver/{username}", findDriver).Methods("GET", "POST", "PUT")
+	router.HandleFunc("/api/v1/driver", allDriver) //display all drivers
 
 	fmt.Println("Listening at port 5000")
 	log.Fatal(http.ListenAndServe(":5000", router))
@@ -76,6 +89,51 @@ func findPassenger(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func findDriver(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	if r.Method == "POST" { //create new driver account
+		if body, err := ioutil.ReadAll(r.Body); err == nil {
+			var data Driver
+			fmt.Println(string(body))
+			if err := json.Unmarshal(body, &data); err == nil {
+				if _, ok := isDriverExist(params["username"]); !ok {
+					fmt.Println(data)
+					insertDriver(params["username"], data)
+					w.WriteHeader(http.StatusAccepted)
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprintf(w, "Username already exist")
+				}
+			} else {
+				fmt.Println(err)
+			}
+		}
+	} else if r.Method == "PUT" { //update driver information
+		if body, err := ioutil.ReadAll(r.Body); err == nil {
+			var data Driver
+			fmt.Println(string(body))
+			if err := json.Unmarshal(body, &data); err == nil {
+				if _, ok := isDriverExist(params["username"]); ok {
+					fmt.Println(data)
+					updateDriver(params["username"], data)
+					w.WriteHeader(http.StatusAccepted)
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprintf(w, "Username does not exist")
+				}
+			} else {
+				fmt.Println(err)
+			}
+		}
+	} else if val, ok := isDriverExist(params["username"]); ok {
+		json.NewEncoder(w).Encode(val) //retrieve record of 1 driver
+	} else {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, "Invalid Username")
+	}
+}
+
 func allPassenger(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query()
@@ -100,6 +158,30 @@ func allPassenger(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func allDriver(w http.ResponseWriter, r *http.Request) {
+
+	query := r.URL.Query()
+
+	var allDrivers, _ = getDriver()
+	//found := false
+	results := map[string]Driver{}
+
+	if value := query.Get("q"); len(value) > 0 {
+		for k, v := range allDrivers {
+			if strings.Contains(strings.ToLower(v.Username), strings.ToLower(value)) {
+				results[k] = v
+				//found = true
+			}
+		}
+	} else {
+		driversWrapper := struct {
+			Drivers map[string]Driver `json:"Drivers"`
+		}{allDrivers}
+		json.NewEncoder(w).Encode(driversWrapper)
+		return
+	}
+}
+
 func insertPassenger(username string, passenger Passenger) { //add new passenger record into database
 	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
 	if err != nil {
@@ -113,6 +195,19 @@ func insertPassenger(username string, passenger Passenger) { //add new passenger
 	}
 }
 
+func insertDriver(username string, driver Driver) { //add new driver record into database
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	_, err = db.Exec("INSERT INTO driver VALUES (?, ?, ?, ?, ?, ?, ?, ?)", driver.Username, driver.FirstName, driver.LastName, driver.PhoneNo, driver.Email, driver.Password, driver.IDNo, driver.LicenseNo)
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
 func updatePassenger(username string, passenger Passenger) { //update an existing passenger record into database
 	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
 	if err != nil {
@@ -121,6 +216,19 @@ func updatePassenger(username string, passenger Passenger) { //update an existin
 	defer db.Close()
 
 	_, err = db.Exec("UPDATE passenger SET FirstName = ?, LastName = ?, PhoneNo = ?, Email = ?, Password = ? WHERE Username = ?", passenger.FirstName, passenger.LastName, passenger.PhoneNo, passenger.Email, passenger.Password, passenger.Username)
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+func updateDriver(username string, driver Driver) { //update an existing driver record into database
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	_, err = db.Exec("UPDATE driver SET FirstName = ?, LastName = ?, PhoneNo = ?, Email = ?, Password = ?, LicenseNo = ? WHERE Username = ?", driver.FirstName, driver.LastName, driver.PhoneNo, driver.Email, driver.Password, driver.LicenseNo, driver.Username)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -152,6 +260,32 @@ func getPassenger() (map[string]Passenger, bool) {
 	return allPassengers, true
 }
 
+func getDriver() (map[string]Driver, bool) {
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	results, err := db.Query("SELECT * from Driver")
+	if err != nil {
+		panic(err.Error())
+	}
+
+	var allDrivers map[string]Driver = map[string]Driver{}
+
+	for results.Next() {
+		var d Driver
+		var username string
+		err = results.Scan(&username, &d.FirstName, &d.LastName, &d.PhoneNo, &d.Email, &d.Password, &d.IDNo, &d.LicenseNo)
+		if err != nil {
+			panic(err.Error())
+		}
+		allDrivers[username] = d
+	}
+	return allDrivers, true
+}
+
 func isPassengerExist(username string) (Passenger, bool) {
 	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
 	if err != nil {
@@ -166,4 +300,20 @@ func isPassengerExist(username string) (Passenger, bool) {
 		return p, false
 	}
 	return p, true
+}
+
+func isDriverExist(username string) (Driver, bool) {
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	var d Driver
+	result := db.QueryRow("SELECT * from Driver WHERE Username=?", username)
+	err = result.Scan(&d.Username, &d.FirstName, &d.LastName, &d.PhoneNo, &d.Email, &d.Password, &d.IDNo, &d.LicenseNo)
+	if err == sql.ErrNoRows {
+		return d, false
+	}
+	return d, true
 }
