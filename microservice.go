@@ -33,6 +33,16 @@ type Driver struct {
 	LicenseNo string `json:"LicenseNo"`
 }
 
+type CarTrip struct {
+	ID                int    `json:"ID"`
+	PassengerUsername string `json:"PassengerUsername"`
+	DriverUsername    string `json:"DriverUsername"`
+	Pickup            string `json:"Pickup"`
+	Dropoff           string `json:"Dropoff"`
+	PickupTime        string `json:"PickupTime"`
+	IsCompleted       string `json:"IsCompleted"`
+}
+
 func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/v1/passenger/{username}", findPassenger).Methods("GET", "POST", "PUT")
@@ -40,8 +50,25 @@ func main() {
 	router.HandleFunc("/api/v1/driver/{username}", findDriver).Methods("GET", "POST", "PUT")
 	router.HandleFunc("/api/v1/driver", allDriver) //display all drivers
 
+	router.HandleFunc("/api/v1/cartrip/{passengerUsername}", findCarTrip).Methods("GET", "POST", "PUT")
+
 	fmt.Println("Listening at port 5000")
 	log.Fatal(http.ListenAndServe(":5000", router))
+}
+
+func findCarTrip(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+
+	if _, ok := isCarTripExist(params["passengerUsername"]); ok { //retrieve all car trip records for a passenger
+		var allCarTrips, _ = getCarTrip(params["passengerUsername"])
+		cartripsWrapper := struct {
+			CarTrips map[string]CarTrip `json:"CarTrips"`
+		}{allCarTrips}
+		json.NewEncoder(w).Encode(cartripsWrapper)
+	} else {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, "Invalid Username")
+	}
 }
 
 func findPassenger(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +261,33 @@ func updateDriver(username string, driver Driver) { //update an existing driver 
 	}
 }
 
+func getCarTrip(username string) (map[string]CarTrip, bool) {
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	//retrieves all COMPLETED car trips in reverse chronological order
+	results, err := db.Query("SELECT * from CarTrip WHERE PassengerUsername=? AND IsCompleted=? ORDER BY PickupTime DESC", username, "1")
+	if err != nil {
+		panic(err.Error())
+	}
+
+	var allCarTrips map[string]CarTrip = map[string]CarTrip{}
+
+	for results.Next() { //group all car trips into a map as there might be more than 1 record
+		var ct CarTrip
+		var ID string
+		err = results.Scan(&ID, &ct.PassengerUsername, &ct.DriverUsername, &ct.Pickup, &ct.Dropoff, &ct.PickupTime, &ct.IsCompleted)
+		if err != nil {
+			panic(err.Error())
+		}
+		allCarTrips[ID] = ct
+	}
+	return allCarTrips, true
+}
+
 func getPassenger() (map[string]Passenger, bool) {
 	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
 	if err != nil {
@@ -284,6 +338,29 @@ func getDriver() (map[string]Driver, bool) {
 		allDrivers[username] = d
 	}
 	return allDrivers, true
+}
+
+func isCarTripExist(username string) (CarTrip, bool) {
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	var p Passenger
+	var ct CarTrip
+
+	//extra statement to make sure username entered is in the database
+	result := db.QueryRow("SELECT * from Passenger WHERE Username=?", username)
+	err = result.Scan(&p.Username, &p.FirstName, &p.LastName, &p.PhoneNo, &p.Email, &p.Password)
+
+	//retrieves all car trips for username entered
+	result2 := db.QueryRow("SELECT * from CarTrip WHERE PassengerUsername=?", username)
+	err2 := result2.Scan(&ct.ID, &ct.PassengerUsername, &ct.DriverUsername, &ct.Pickup, &ct.Dropoff, &ct.PickupTime, &ct.IsCompleted)
+	if err == sql.ErrNoRows && err2 == sql.ErrNoRows {
+		return ct, false
+	}
+	return ct, true
 }
 
 func isPassengerExist(username string) (Passenger, bool) {
