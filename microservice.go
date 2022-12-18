@@ -77,12 +77,12 @@ func findCarTrip(w http.ResponseWriter, r *http.Request) {
 				fmt.Println(err)
 			}
 		}
-		/*} else if r.Method == "PUT" { //update car trip record
+	} else if r.Method == "PUT" { //update car trip record
 		if body, err := ioutil.ReadAll(r.Body); err == nil {
 			var data CarTrip
 			fmt.Println(string(body))
 			if err := json.Unmarshal(body, &data); err == nil {
-				if _, ok := isPassengerExist(params["passengerUsername"]); ok {
+				if _, ok := isCarTripExist(params["passengerUsername"]); ok {
 					fmt.Println(data)
 					updateCarTrip(params["passengerUsername"], data)
 					w.WriteHeader(http.StatusAccepted)
@@ -93,7 +93,7 @@ func findCarTrip(w http.ResponseWriter, r *http.Request) {
 			} else {
 				fmt.Println(err)
 			}
-		}*/
+		}
 	} else if _, ok := isCarTripExist(params["passengerUsername"]); ok { //retrieve all car trip records for a passenger
 		var allCarTrips, _ = getCarTrip(params["passengerUsername"])
 		cartripsWrapper := struct {
@@ -291,7 +291,20 @@ func insertDriver(username string, driver Driver) { //add new driver record into
 	}
 	defer db.Close()
 
-	_, err = db.Exec("INSERT INTO driver VALUES (?, ?, ?, ?, ?, ?, ?, ?)", driver.Username, driver.FirstName, driver.LastName, driver.PhoneNo, driver.Email, driver.Password, driver.IDNo, driver.LicenseNo)
+	_, err = db.Exec("INSERT INTO driver VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", driver.Username, driver.FirstName, driver.LastName, driver.PhoneNo, driver.Email, driver.Password, driver.IDNo, driver.LicenseNo, driver.IsBusy)
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+func updateCarTrip(username string, cartrip CarTrip) { //update an existing car trip record into database
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	_, err = db.Exec("UPDATE cartrip SET IsCompleted = ? WHERE PassengerUsername = ?", "1", username)
 	if err != nil {
 		panic(err.Error())
 	}
