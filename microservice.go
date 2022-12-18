@@ -31,6 +31,7 @@ type Driver struct {
 	Password  string `json:"Password"`
 	IDNo      string `json:"IDNo"`
 	LicenseNo string `json:"LicenseNo"`
+	IsBusy    string `json:"IsBusy"`
 }
 
 type CarTrip struct {
@@ -76,6 +77,23 @@ func findCarTrip(w http.ResponseWriter, r *http.Request) {
 				fmt.Println(err)
 			}
 		}
+		/*} else if r.Method == "PUT" { //update car trip record
+		if body, err := ioutil.ReadAll(r.Body); err == nil {
+			var data CarTrip
+			fmt.Println(string(body))
+			if err := json.Unmarshal(body, &data); err == nil {
+				if _, ok := isPassengerExist(params["passengerUsername"]); ok {
+					fmt.Println(data)
+					updateCarTrip(params["passengerUsername"], data)
+					w.WriteHeader(http.StatusAccepted)
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprintf(w, "Username does not exist")
+				}
+			} else {
+				fmt.Println(err)
+			}
+		}*/
 	} else if _, ok := isCarTripExist(params["passengerUsername"]); ok { //retrieve all car trip records for a passenger
 		var allCarTrips, _ = getCarTrip(params["passengerUsername"])
 		cartripsWrapper := struct {
@@ -233,7 +251,21 @@ func insertCarTrip(cartrip CarTrip) { //add new car trip record into database
 	}
 	defer db.Close()
 
+	result := db.QueryRow("SELECT Username FROM driver WHERE IsBusy = '0' ORDER BY RAND() LIMIT 1") //randomly selects a driver that is available
+	var newDriver string
+	err = result.Scan(&newDriver) //retrieve username of driver that was chosen
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//add Car Trip record with empty driver username
 	_, err = db.Exec("INSERT INTO cartrip (PassengerUsername, DriverUsername, Pickup, Dropoff, PickupTime, IsCompleted) VALUES (?, ?, ?, ?, ?, ?)", cartrip.PassengerUsername, cartrip.DriverUsername, cartrip.Pickup, cartrip.Dropoff, cartrip.PickupTime, cartrip.IsCompleted)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	//update Car Trip record with the newly added driver
+	_, err = db.Exec("UPDATE cartrip SET DriverUsername = ? WHERE DriverUsername = ''", newDriver)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -285,7 +317,7 @@ func updateDriver(username string, driver Driver) { //update an existing driver 
 	}
 	defer db.Close()
 
-	_, err = db.Exec("UPDATE driver SET FirstName = ?, LastName = ?, PhoneNo = ?, Email = ?, Password = ?, LicenseNo = ? WHERE Username = ?", driver.FirstName, driver.LastName, driver.PhoneNo, driver.Email, driver.Password, driver.LicenseNo, driver.Username)
+	_, err = db.Exec("UPDATE driver SET FirstName = ?, LastName = ?, PhoneNo = ?, Email = ?, Password = ?, LicenseNo = ?, IsBusy = ? WHERE Username = ?", driver.FirstName, driver.LastName, driver.PhoneNo, driver.Email, driver.Password, driver.LicenseNo, driver.IsBusy, driver.Username)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -361,7 +393,7 @@ func getDriver() (map[string]Driver, bool) {
 	for results.Next() {
 		var d Driver
 		var username string
-		err = results.Scan(&username, &d.FirstName, &d.LastName, &d.PhoneNo, &d.Email, &d.Password, &d.IDNo, &d.LicenseNo)
+		err = results.Scan(&username, &d.FirstName, &d.LastName, &d.PhoneNo, &d.Email, &d.Password, &d.IDNo, &d.LicenseNo, &d.IsBusy)
 		if err != nil {
 			panic(err.Error())
 		}
@@ -418,7 +450,7 @@ func isDriverExist(username string) (Driver, bool) {
 
 	var d Driver
 	result := db.QueryRow("SELECT * from Driver WHERE Username=?", username)
-	err = result.Scan(&d.Username, &d.FirstName, &d.LastName, &d.PhoneNo, &d.Email, &d.Password, &d.IDNo, &d.LicenseNo)
+	err = result.Scan(&d.Username, &d.FirstName, &d.LastName, &d.PhoneNo, &d.Email, &d.Password, &d.IDNo, &d.LicenseNo, &d.IsBusy)
 	if err == sql.ErrNoRows {
 		return d, false
 	}
