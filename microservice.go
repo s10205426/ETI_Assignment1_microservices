@@ -59,7 +59,24 @@ func main() {
 func findCarTrip(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
-	if _, ok := isCarTripExist(params["passengerUsername"]); ok { //retrieve all car trip records for a passenger
+	if r.Method == "POST" { //create new car trip record
+		if body, err := ioutil.ReadAll(r.Body); err == nil {
+			var data CarTrip
+			fmt.Println(string(body))
+			if err := json.Unmarshal(body, &data); err == nil {
+				if _, ok := isPassengerExist(params["passengerUsername"]); ok {
+					fmt.Println(data)
+					insertCarTrip(data)
+					w.WriteHeader(http.StatusAccepted)
+				} else {
+					w.WriteHeader(http.StatusNotFound)
+					fmt.Fprintf(w, "Username does not exist")
+				}
+			} else {
+				fmt.Println(err)
+			}
+		}
+	} else if _, ok := isCarTripExist(params["passengerUsername"]); ok { //retrieve all car trip records for a passenger
 		var allCarTrips, _ = getCarTrip(params["passengerUsername"])
 		cartripsWrapper := struct {
 			CarTrips map[string]CarTrip `json:"CarTrips"`
@@ -206,6 +223,19 @@ func allDriver(w http.ResponseWriter, r *http.Request) {
 		}{allDrivers}
 		json.NewEncoder(w).Encode(driversWrapper)
 		return
+	}
+}
+
+func insertCarTrip(cartrip CarTrip) { //add new car trip record into database
+	db, err := sql.Open("mysql", "user:password@tcp(127.0.0.1:3307)/my_db")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer db.Close()
+
+	_, err = db.Exec("INSERT INTO cartrip (PassengerUsername, DriverUsername, Pickup, Dropoff, PickupTime, IsCompleted) VALUES (?, ?, ?, ?, ?, ?)", cartrip.PassengerUsername, cartrip.DriverUsername, cartrip.Pickup, cartrip.Dropoff, cartrip.PickupTime, cartrip.IsCompleted)
+	if err != nil {
+		panic(err.Error())
 	}
 }
 
@@ -357,7 +387,7 @@ func isCarTripExist(username string) (CarTrip, bool) {
 	//retrieves all car trips for username entered
 	result2 := db.QueryRow("SELECT * from CarTrip WHERE PassengerUsername=?", username)
 	err2 := result2.Scan(&ct.ID, &ct.PassengerUsername, &ct.DriverUsername, &ct.Pickup, &ct.Dropoff, &ct.PickupTime, &ct.IsCompleted)
-	if err == sql.ErrNoRows && err2 == sql.ErrNoRows {
+	if err == sql.ErrNoRows || err2 == sql.ErrNoRows {
 		return ct, false
 	}
 	return ct, true
